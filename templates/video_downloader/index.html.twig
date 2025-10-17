@@ -1,0 +1,483 @@
+{% extends 'base.html.twig' %}
+
+{% block body %}
+<div x-data="videoDownloader()" x-cloak class="container mx-auto px-4 py-8">
+    <!-- Notifications -->
+    <div class="fixed top-4 right-4 z-50 space-y-2">
+        <template x-for="notification in notifications" :key="notification.id">
+            <div 
+                class="notification bg-white rounded-lg shadow-lg p-4 max-w-sm"
+                :class="{
+                    'border-l-4 border-green-500': notification.type === 'success',
+                    'border-l-4 border-red-500': notification.type === 'error',
+                    'border-l-4 border-blue-500': notification.type === 'info'
+                }"
+            >
+                <div class="flex items-start">
+                    <div class="flex-shrink-0">
+                        <i class="fas" 
+                           :class="{
+                               'fa-check-circle text-green-500': notification.type === 'success',
+                               'fa-exclamation-circle text-red-500': notification.type === 'error',
+                               'fa-info-circle text-blue-500': notification.type === 'info'
+                           }"></i>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm font-medium text-gray-900" x-text="notification.title"></p>
+                        <p class="text-sm text-gray-500" x-text="notification.message"></p>
+                    </div>
+                    <button @click="removeNotification(notification.id)" class="ml-4 text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Header -->
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-bold text-center text-indigo-900 mb-2">
+            <i class="fas fa-download mr-3"></i>
+            Téléchargeur Vidéo & Audio
+        </h1>
+        <p class="text-center text-gray-600 mb-2">
+            Téléchargez des vidéos et audios depuis YouTube, Vimeo, et plus encore
+        </p>
+        <p class="text-center text-sm text-indigo-600 mb-8">
+            <i class="fas fa-info-circle mr-1"></i>
+            Mode asynchrone : les fichiers sont traités en arrière-plan
+        </p>
+
+        <!-- Formulaire principal -->
+        <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
+            <!-- Input URL -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    URL de la vidéo
+                </label>
+                <div class="flex gap-2">
+                    <input 
+                        type="text" 
+                        x-model="videoUrl"
+                        @keyup.enter="fetchVideoInfo()"
+                        placeholder="Collez l'URL de la vidéo ici..."
+                        class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        :disabled="loading"
+                    >
+                    <button 
+                        @click="fetchVideoInfo()"
+                        :disabled="!videoUrl || loading"
+                        class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition"
+                    >
+                        <i class="fas fa-search mr-2" :class="{'animate-spin fa-spinner': loading}"></i>
+                        <span x-text="loading ? 'Analyse...' : 'Analyser'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Informations vidéo -->
+            <div x-show="videoInfo" class="space-y-4">
+                <div class="flex gap-4 p-4 bg-gray-50 rounded-lg">
+                    <img 
+                        x-show="videoInfo?.thumbnail"
+                        :src="videoInfo?.thumbnail" 
+                        alt="Thumbnail"
+                        class="w-32 h-32 object-cover rounded"
+                    >
+                    <div class="flex-1">
+                        <h3 class="text-xl font-semibold text-gray-800 mb-2" x-text="videoInfo?.title"></h3>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
+                                <i class="far fa-clock mr-1"></i>
+                                <span x-text="formatDuration(videoInfo?.duration)"></span>
+                            </span>
+                            <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+                                <i class="far fa-user mr-1"></i>
+                                <span x-text="videoInfo?.uploader"></span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Options de téléchargement -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Type de fichier
+                        </label>
+                        <select 
+                            x-model="downloadType"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                        >
+                            <option value="video">🎬 Vidéo</option>
+                            <option value="audio">🎵 Audio seulement</option>
+                        </select>
+                    </div>
+
+                    <div x-show="downloadType === 'video'">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Qualité vidéo
+                        </label>
+                        <select 
+                            x-model="selectedFormat"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                        >
+                            <option value="best">Meilleure qualité</option>
+                            <option value="bestvideo[height<=1080]+bestaudio/best">HD 1080p</option>
+                            <option value="bestvideo[height<=720]+bestaudio/best">HD 720p</option>
+                            <option value="bestvideo[height<=480]+bestaudio/best">SD 480p</option>
+                        </select>
+                    </div>
+
+                    <div x-show="downloadType === 'audio'">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Format audio
+                        </label>
+                        <select 
+                            x-model="audioFormat"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                        >
+                            <option value="mp3">MP3</option>
+                            <option value="m4a">M4A</option>
+                            <option value="wav">WAV</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Mode de traitement
+                        </label>
+                        <select 
+                            x-model="asyncMode"
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                        >
+                            <option :value="true">⚡ Asynchrone (recommandé)</option>
+                            <option :value="false">🔄 Synchrone (immédiat)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Boutons d'action -->
+                <div class="flex gap-3">
+                    <button 
+                        @click="startDownload()"
+                        :disabled="processing"
+                        class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition font-medium"
+                    >
+                        <i class="fas mr-2" :class="processing ? 'fa-spinner animate-spin' : 'fa-download'"></i>
+                        <span x-text="processingStatus || `Télécharger ${downloadType === 'audio' ? 'l\'audio' : 'la vidéo'}`"></span>
+                    </button>
+                    <button 
+                        @click="reset()"
+                        :disabled="processing"
+                        class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:cursor-not-allowed transition"
+                    >
+                        <i class="fas fa-redo mr-2"></i>
+                        Réinitialiser
+                    </button>
+                </div>
+
+                <!-- Barre de progression -->
+                <div x-show="processing || currentSession" class="space-y-2">
+                    <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                        <div class="bg-indigo-600 h-full transition-all duration-300" 
+                             :style="`width: ${progress}%`"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-sm">
+                        <p class="text-gray-600" x-text="processingStatus"></p>
+                        <span class="text-indigo-600 font-medium" x-text="`${progress}%`"></span>
+                    </div>
+                </div>
+
+                <!-- Session info -->
+                <div x-show="currentSession" class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-blue-900">Session ID:</p>
+                            <p class="text-xs text-blue-700 font-mono" x-text="currentSession"></p>
+                        </div>
+                        <button 
+                            @click="cancelSession()"
+                            x-show="sessionStatus === 'processing' || sessionStatus === 'pending'"
+                            class="px-4 py-2 bg-red-500 text-white text-sm rounded hover:bg-red-600"
+                        >
+                            <i class="fas fa-times mr-1"></i>
+                            Annuler
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Informations -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+            <div class="flex items-start gap-3">
+                <i class="fas fa-info-circle text-blue-600 mt-1"></i>
+                <div>
+                    <p class="font-semibold mb-1">Comment ça marche ?</p>
+                    <ul class="space-y-1 list-disc list-inside">
+                        <li>Collez l'URL de la vidéo et cliquez sur "Analyser"</li>
+                        <li>Choisissez le format (vidéo ou audio) et la qualité</li>
+                        <li><strong>Mode asynchrone</strong> : le traitement se fait en arrière-plan, vous pouvez fermer la page</li>
+                        <li><strong>Mode synchrone</strong> : le traitement est immédiat mais vous devez rester sur la page</li>
+                        <li>Le téléchargement démarre automatiquement une fois le fichier prêt</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function videoDownloader() {
+    return {
+        videoUrl: '',
+        videoInfo: null,
+        loading: false,
+        processing: false,
+        progress: 0,
+        processingStatus: '',
+        downloadType: 'video',
+        selectedFormat: 'best',
+        audioFormat: 'mp3',
+        asyncMode: true,
+        currentSession: null,
+        sessionStatus: null,
+        pollInterval: null,
+        notifications: [],
+        notificationId: 0,
+
+        async fetchVideoInfo() {
+            if (!this.videoUrl) return;
+
+            this.loading = true;
+            try {
+                const response = await fetch('/api/video/info', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: this.videoUrl })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.videoInfo = data.data;
+                    this.showNotification('success', 'Succès', 'Informations récupérées avec succès');
+                } else {
+                    this.showNotification('error', 'Erreur', data.error || 'Impossible de récupérer les informations');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                this.showNotification('error', 'Erreur', 'Une erreur est survenue');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async startDownload() {
+            this.processing = true;
+            this.progress = 0;
+            this.processingStatus = 'Préparation...';
+
+            try {
+                let endpoint, payload;
+                
+                if (this.downloadType === 'audio') {
+                    endpoint = '/api/video/download-audio';
+                    payload = {
+                        url: this.videoUrl,
+                        format: this.audioFormat,
+                        bitrate: '192k',
+                        sample_rate: '44100',
+                        async: this.asyncMode
+                    };
+                } else {
+                    endpoint = '/api/video/download';
+                    payload = {
+                        url: this.videoUrl,
+                        format: this.selectedFormat,
+                        type: this.downloadType,
+                        async: this.asyncMode
+                    };
+                }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (this.asyncMode) {
+                        // Mode asynchrone : démarrer le polling
+                        this.currentSession = data.session_id;
+                        this.sessionStatus = data.status;
+                        this.processingStatus = 'Mise en file d\'attente...';
+                        this.showNotification('info', 'En cours', 'Le traitement a été mis en file d\'attente');
+                        this.startPolling();
+                    } else {
+                        // Mode synchrone : télécharger immédiatement
+                        this.progress = 100;
+                        this.processingStatus = 'Téléchargement...';
+                        this.downloadFile(data.download_url, data.filename);
+                        this.showNotification('success', 'Succès', 'Téléchargement terminé');
+                        
+                        setTimeout(() => {
+                            this.processing = false;
+                            this.processingStatus = '';
+                            this.progress = 0;
+                        }, 2000);
+                    }
+                } else {
+                    this.showNotification('error', 'Erreur', data.error || 'Échec du téléchargement');
+                    this.processing = false;
+                }
+            } catch (error) {
+                console.error('Download error:', error);
+                this.showNotification('error', 'Erreur', 'Une erreur est survenue');
+                this.processing = false;
+            }
+        },
+
+        startPolling() {
+            this.pollInterval = setInterval(async () => {
+                await this.checkStatus();
+            }, 2000); // Vérifier toutes les 2 secondes
+        },
+
+        stopPolling() {
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
+            }
+        },
+
+        async checkStatus() {
+            if (!this.currentSession) return;
+
+            try {
+                const response = await fetch(`/api/video/status/${this.currentSession}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    this.sessionStatus = data.status;
+                    this.progress = data.progress;
+
+                    switch (data.status) {
+                        case 'pending':
+                            this.processingStatus = 'En attente dans la file...';
+                            break;
+                        case 'processing':
+                            this.processingStatus = 'Traitement en cours...';
+                            break;
+                        case 'completed':
+                            this.processingStatus = 'Téléchargement...';
+                            this.stopPolling();
+                            this.downloadFile(data.download_url, data.filename);
+                            this.showNotification('success', 'Terminé', 'Le fichier a été téléchargé');
+                            setTimeout(() => {
+                                this.processing = false;
+                                this.currentSession = null;
+                                this.progress = 0;
+                                this.processingStatus = '';
+                            }, 2000);
+                            break;
+                        case 'failed':
+                            this.processingStatus = 'Échec';
+                            this.stopPolling();
+                            this.showNotification('error', 'Erreur', data.error || 'Le traitement a échoué');
+                            this.processing = false;
+                            break;
+                        case 'cancelled':
+                            this.processingStatus = 'Annulé';
+                            this.stopPolling();
+                            this.showNotification('info', 'Annulé', 'Le traitement a été annulé');
+                            this.processing = false;
+                            break;
+                    }
+                }
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
+        },
+
+        async cancelSession() {
+            if (!this.currentSession) return;
+
+            try {
+                const response = await fetch(`/api/video/cancel/${this.currentSession}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.stopPolling();
+                    this.showNotification('info', 'Annulé', 'Le traitement a été annulé');
+                    this.processing = false;
+                    this.currentSession = null;
+                }
+            } catch (error) {
+                console.error('Cancel error:', error);
+            }
+        },
+
+        downloadFile(url, filename) {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        },
+
+        reset() {
+            this.stopPolling();
+            this.videoUrl = '';
+            this.videoInfo = null;
+            this.selectedFormat = 'best';
+            this.downloadType = 'video';
+            this.audioFormat = 'mp3';
+            this.progress = 0;
+            this.processingStatus = '';
+            this.currentSession = null;
+            this.sessionStatus = null;
+        },
+
+        formatDuration(seconds) {
+            if (!seconds) return '0:00';
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        },
+
+        formatSize(bytes) {
+            if (!bytes || bytes === 0) return '0 Bytes';
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        },
+
+        showNotification(type, title, message) {
+            const id = ++this.notificationId;
+            this.notifications.push({ id, type, title, message });
+            
+            setTimeout(() => {
+                this.removeNotification(id);
+            }, 5000);
+        },
+
+        removeNotification(id) {
+            this.notifications = this.notifications.filter(n => n.id !== id);
+        }
+    }
+}
+</script>
+{% endblock %}
