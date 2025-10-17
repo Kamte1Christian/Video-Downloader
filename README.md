@@ -21,7 +21,7 @@ Application web complète pour télécharger des vidéos et extraire de l'audio 
 
 ## 🎯 Démo
 
-![Demo Screenshot](docs/screenshot.png)
+![Demo Screenshot](docs/downloader-demo.PNG)
 
 ## 📋 Prérequis
 
